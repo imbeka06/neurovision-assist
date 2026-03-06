@@ -1,56 +1,419 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NeuroVision - Interface</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="NeuroVision Audio Interface - Real-time navigation alerts for visually impaired users"
+    />
+    <title>NeuroVision - Audio Interface</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
     <style>
-        body { margin: 0; background: #121212; color: #ffffff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; }
-        h1 { font-size: 2rem; margin-bottom: 2rem; padding: 0 20px; }
-        #startBtn { background: #00ff00; color: black; border: none; padding: 25px 50px; font-size: 1.8rem; font-weight: bold; border-radius: 15px; cursor: pointer; box-shadow: 0 10px 20px rgba(0,255,0,0.2); }
-        #startBtn:active { transform: scale(0.95); }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        background: #0a0a0a; /* Pure black for maximum contrast */
+        color: #ffffff;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        text-align: center;
+        overflow: hidden;
+      }
+
+      /* Header Section */
+      #header {
+        margin-bottom: 3rem;
+        padding: 0 20px;
+      }
+
+      h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        letter-spacing: 1px;
+      }
+
+      #connectionStatus {
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        padding: 8px 16px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.1);
+        display: inline-block;
+      }
+
+      /* Status Display */
+      #status {
+        font-size: 1.8rem;
+        font-weight: 700;
+        margin-bottom: 2rem;
+        line-height: 1.6;
+        padding: 20px 30px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+        min-height: 100px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        max-width: 90%;
+        transition: all 0.3s ease;
+      }
+
+      /* State: Standby */
+      #status.standby {
+        color: #ffffff;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+      }
+
+      /* State: Active */
+      #status.active {
+        color: #00ff00;
+        border: 2px solid #00ff00;
+        box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+      }
+
+      /* State: Alert */
+      #status.alert {
+        color: #ff4444;
+        border: 2px solid #ff4444;
+        background: rgba(255, 68, 68, 0.1);
+        box-shadow: 0 0 20px rgba(255, 68, 68, 0.3);
+        animation: pulse-alert 0.5s ease;
+      }
+
+      @keyframes pulse-alert {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.05);
+        }
+      }
+
+      /* Start Button */
+      #startBtn {
+        background: linear-gradient(135deg, #00ff00 0%, #00dd00 100%);
+        color: #000000;
+        border: none;
+        padding: 30px 60px;
+        font-size: 2rem;
+        font-weight: 700;
+        border-radius: 20px;
+        cursor: pointer;
+        box-shadow: 0 10px 30px rgba(0, 255, 0, 0.3);
+        transition: all 0.2s ease;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+      }
+
+      #startBtn:hover {
+        transform: scale(1.05);
+        box-shadow: 0 15px 40px rgba(0, 255, 0, 0.5);
+      }
+
+      #startBtn:active {
+        transform: scale(0.95);
+      }
+
+      #startBtn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      /* Stop Button (hidden by default) */
+      #stopBtn {
+        background: linear-gradient(135deg, #ff4444 0%, #dd0000 100%);
+        color: #ffffff;
+        border: none;
+        padding: 20px 40px;
+        font-size: 1.5rem;
+        font-weight: 700;
+        border-radius: 12px;
+        cursor: pointer;
+        box-shadow: 0 10px 30px rgba(255, 68, 68, 0.3);
+        transition: all 0.2s ease;
+        display: none;
+        margin-top: 2rem;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+      }
+
+      #stopBtn:hover {
+        transform: scale(1.05);
+        box-shadow: 0 15px 40px rgba(255, 68, 68, 0.5);
+      }
+
+      #stopBtn.visible {
+        display: block;
+      }
+
+      /* Audio Indicator */
+      #audioIndicator {
+        font-size: 3rem;
+        margin: 2rem 0;
+        animation: bounce 1s infinite;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+
+      #audioIndicator.speaking {
+        opacity: 1;
+      }
+
+      @keyframes bounce {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-20px);
+        }
+      }
+
+      /* Alert Message Container */
+      #alertMessage {
+        font-size: 2rem;
+        font-weight: 700;
+        margin: 1rem 0;
+        min-height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #ff4444;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+
+      #alertMessage.visible {
+        opacity: 1;
+      }
+
+      /* Battery/Connection Footer */
+      #footer {
+        position: absolute;
+        bottom: 20px;
+        font-size: 1rem;
+        color: rgba(255, 255, 255, 0.6);
+        display: flex;
+        gap: 20px;
+      }
+
+      /* Accessibility & Responsive */
+      @media (max-width: 480px) {
+        h1 {
+          font-size: 2rem;
+        }
+        #status {
+          font-size: 1.4rem;
+        }
+        #startBtn {
+          padding: 20px 40px;
+          font-size: 1.5rem;
+        }
+        #audioIndicator {
+          font-size: 2rem;
+        }
+      }
     </style>
-</head>
-<body>
-    <h1 id="status">System Standby.<br>Tap to begin.</h1>
-    <button id="startBtn">START NAVIGATION</button>
+  </head>
+  <body>
+    <div id="header">
+      <h1>🧠 NeuroVision</h1>
+      <div id="connectionStatus">🟡 Connecting...</div>
+    </div>
+
+    <div id="audioIndicator">🔊</div>
+
+    <div id="status" class="standby">System Standby.<br />Tap to begin.</div>
+
+    <div id="alertMessage"></div>
+
+    <button id="startBtn" aria-label="Start navigation assistance">
+      START NAVIGATION
+    </button>
+    <button
+      id="stopBtn"
+      class="visible"
+      aria-label="Stop navigation assistance"
+    >
+      STOP
+    </button>
+
+    <div id="footer">
+      <span id="frameCount">📹 Frames: 0</span>
+      <span id="latency">⏱️ Latency: --ms</span>
+    </div>
 
     <script>
-        const socket = io();
-        let isActive = false;
-        const statusText = document.getElementById('status');
-        const startBtn = document.getElementById('startBtn');
+      // ========== Configuration ==========
+      const config = {
+        SPEECH_RATE: 1.2,
+        ALERT_DURATION: 3000,
+        STATUS_UPDATE_INTERVAL: 100,
+        FRAME_TIMEOUT: 5000, // If no frame received in 5sec, assume disconnected
+      };
 
-        // Unlock the audio engine when the user taps start
-        startBtn.addEventListener('click', () => {
-            isActive = true;
-            statusText.innerText = "🟢 Smart Silence Active.\nScanning environment...";
-            startBtn.style.display = "none"; // Hide button once started
-            
-            // Announce startup
-            let startMsg = new SpeechSynthesisUtterance("Neuro vision navigation started.");
-            window.speechSynthesis.speak(startMsg);
-        });
+      // ========== DOM Elements ==========
+      const socket = io();
+      const statusText = document.getElementById("status");
+      const startBtn = document.getElementById("startBtn");
+      const stopBtn = document.getElementById("stopBtn");
+      const connectionStatus = document.getElementById("connectionStatus");
+      const audioIndicator = document.getElementById("audioIndicator");
+      const alertMessage = document.getElementById("alertMessage");
+      const frameCount = document.getElementById("frameCount");
+      const latencyDisplay = document.getElementById("latency");
 
-        // Listen for AI alerts from the laptop
-        socket.on('navigation_alert', function(data) {
-            if (isActive) {
-                statusText.innerText = "⚠️ " + data.message;
-                statusText.style.color = "#ff4444";
-                
-                // Speak the command out loud
-                let utterance = new SpeechSynthesisUtterance(data.message);
-                utterance.rate = 1.2; // Speak slightly faster for emergencies
-                window.speechSynthesis.speak(utterance);
-                
-                // Reset text color after a few seconds
-                setTimeout(() => {
-                    statusText.innerText = "🟢 Smart Silence Active.\nScanning environment...";
-                    statusText.style.color = "#ffffff";
-                }, 3000);
+      // ========== State Management ==========
+      let isActive = false;
+      let lastFrameTime = Date.now();
+      let frameCounter = 0;
+      let isSpeaking = false;
+
+      // ========== Socket.IO Events ==========
+      socket.on("connect", () => {
+        connectionStatus.textContent = "🟢 Connected to Server";
+        connectionStatus.style.color = "#00ff00";
+      });
+
+      socket.on("disconnect", () => {
+        connectionStatus.textContent = "🔴 Disconnected";
+        connectionStatus.style.color = "#ff4444";
+        if (isActive) {
+          statusText.textContent = "⚠️ CONNECTION LOST\nPlease restart.";
+          statusText.classList.add("alert");
+        }
+      });
+
+      socket.on("navigation_alert", function (data) {
+        if (!isActive) return;
+
+        lastFrameTime = Date.now();
+        frameCounter++;
+        frameCount.textContent = `📹 Frames: ${frameCounter}`;
+
+        // Update UI
+        statusText.textContent = data.message;
+        statusText.classList.remove("active");
+        statusText.classList.add("alert");
+        alertMessage.textContent = "⚠️ " + data.message;
+        alertMessage.classList.add("visible");
+
+        // Speak the alert
+        speakAlert(data.message);
+
+        // Reset status after duration
+        setTimeout(() => {
+          if (isActive) {
+            statusText.textContent = "🟢 Scanning...\nPath clear.";
+            statusText.classList.remove("alert");
+            statusText.classList.add("active");
+            alertMessage.classList.remove("visible");
+          }
+        }, config.ALERT_DURATION);
+      });
+
+      // ========== Audio Functions ==========
+      function speakAlert(message) {
+        // Cancel any ongoing speech
+        window.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(message);
+        utterance.rate = config.SPEECH_RATE;
+        utterance.pitch = 1;
+        utterance.volume = 1;
+
+        utterance.onstart = () => {
+          isSpeaking = true;
+          audioIndicator.classList.add("speaking");
+        };
+
+        utterance.onend = () => {
+          isSpeaking = false;
+          audioIndicator.classList.remove("speaking");
+        };
+
+        utterance.onerror = (event) => {
+          console.error("Speech synthesis error:", event.error);
+          isSpeaking = false;
+          audioIndicator.classList.remove("speaking");
+        };
+
+        window.speechSynthesis.speak(utterance);
+      }
+
+      // ========== Button Events ==========
+      startBtn.addEventListener("click", () => {
+        isActive = true;
+        startBtn.style.display = "none";
+        stopBtn.classList.add("visible");
+
+        // Update UI
+        statusText.textContent = "🟢 Scanning...\nPath clear.";
+        statusText.classList.remove("standby");
+        statusText.classList.add("active");
+
+        // Announce startup
+        speakAlert("Navigation started. Scanning environment.");
+
+        // Start latency monitoring
+        startLatencyMonitoring();
+      });
+
+      stopBtn.addEventListener("click", () => {
+        isActive = false;
+        startBtn.style.display = "block";
+        stopBtn.classList.remove("visible");
+
+        // Update UI
+        statusText.textContent = "System Standby.\nTap to begin.";
+        statusText.classList.remove("active", "alert");
+        statusText.classList.add("standby");
+        alertMessage.classList.remove("visible");
+
+        // Cancel any ongoing speech
+        window.speechSynthesis.cancel();
+        isSpeaking = false;
+        audioIndicator.classList.remove("speaking");
+
+        frameCounter = 0;
+        frameCount.textContent = "📹 Frames: 0";
+        latencyDisplay.textContent = "⏱️ Latency: --ms";
+      });
+
+      // ========== Latency Monitoring ==========
+      function startLatencyMonitoring() {
+        setInterval(() => {
+          if (isActive) {
+            const elapsed = Date.now() - lastFrameTime;
+            if (elapsed > config.FRAME_TIMEOUT) {
+              latencyDisplay.textContent = "⏱️ No signal";
+              latencyDisplay.style.color = "#ff4444";
+            } else {
+              latencyDisplay.textContent = `⏱️ Latency: ${elapsed}ms`;
+              latencyDisplay.style.color = "#00ff00";
             }
-        });
+          }
+        }, 500);
+      }
+
+      // ========== Initial Announcement ==========
+      window.addEventListener("load", () => {
+        // Prepare audio context (some browsers require user interaction)
+        console.log("NeuroVision Audio Interface loaded.");
+      });
     </script>
-</body>
+  </body>
 </html>
