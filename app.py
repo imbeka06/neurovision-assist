@@ -41,4 +41,4 @@ if __name__ == '__main__':
     print("==================================================")
     
     # host='0.0.0.0' is critical: it allows external devices on the Wi-Fi to connect
-    socketio.run(app, host='0.0.0.0', port=5001, debug=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)

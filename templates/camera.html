@@ -3,110 +3,348 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NeuroVision - Eyes</title>
+    <title>NeuroVision - Camera Streamer (Eyes)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
     <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
       body {
         margin: 0;
         background: black;
         color: white;
-        font-family: sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         overflow: hidden;
       }
+
       video {
         width: 100vw;
         height: 100vh;
         object-fit: cover;
+        display: block;
       }
+
+      /* Status Overlay */
       #status {
         position: absolute;
         top: 10px;
         left: 10px;
         background: rgba(0, 0, 0, 0.8);
-        padding: 10px;
+        padding: 12px 16px;
         border-radius: 8px;
         font-weight: bold;
-        z-index: 10;
+        z-index: 20;
+        font-size: 0.95rem;
+        border: 2px solid rgba(255, 255, 255, 0.3);
       }
+
+      #status.connected {
+        color: #00ff00;
+        border-color: #00ff00;
+      }
+
+      #status.disconnected {
+        color: #ff4444;
+        border-color: #ff4444;
+      }
+
+      #status.error {
+        color: #ffaa00;
+        border-color: #ffaa00;
+      }
+
+      /* Navigation */
       #nav {
-        position: absolute;
+        position: fixed;
         top: 10px;
         right: 10px;
-        z-index: 10;
+        z-index: 20;
       }
+
       #nav a {
-        background: rgba(0, 255, 0, 0.9);
+        background: linear-gradient(135deg, #00ff00 0%, #00dd00 100%);
         color: black;
         padding: 10px 20px;
         border-radius: 8px;
         text-decoration: none;
         font-weight: bold;
-        font-size: 1rem;
+        font-size: 0.95rem;
         cursor: pointer;
         display: inline-block;
+        box-shadow: 0 4px 12px rgba(0, 255, 0, 0.2);
+        transition: all 0.2s ease;
       }
+
       #nav a:hover {
-        background: rgba(0, 255, 0, 1);
+        transform: scale(1.05);
+        box-shadow: 0 6px 16px rgba(0, 255, 0, 0.4);
+      }
+
+      /* Diagnostics Panel */
+      #diagnostics {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        background: rgba(0, 0, 0, 0.85);
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        z-index: 20;
+        font-family: "Courier New", monospace;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        line-height: 1.5;
+      }
+
+      .diag-label {
+        color: #00ff00;
+      }
+
+      .diag-value {
+        color: #ffffff;
+      }
+
+      /* Frame Indicator */
+      #frameIndicator {
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        background: rgba(0, 0, 0, 0.85);
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        z-index: 20;
+        border: 1px solid rgba(0, 255, 0, 0.2);
+      }
+
+      #frameIndicator.active {
+        color: #00ff00;
+        border-color: #00ff00;
+        box-shadow: 0 0 10px rgba(0, 255, 0, 0.2);
       }
     </style>
   </head>
   <body>
-    <div id="status">🟡 Connecting to Brain...</div>
+    <div id="status">🟡 Connecting...</div>
     <div id="nav"><a href="/user">📢 Audio Interface</a></div>
 
+    <!-- Live video feed from back camera -->
     <video id="video" autoplay playsinline></video>
+
+    <!-- Hidden canvas for frame capture -->
     <canvas id="canvas" style="display: none"></canvas>
 
+    <!-- Diagnostics and monitoring -->
+    <div id="diagnostics">
+      <div>
+        <span class="diag-label">FPS:</span>
+        <span class="diag-value" id="fpsCounter">0</span>
+      </div>
+      <div>
+        <span class="diag-label">Frames Sent:</span>
+        <span class="diag-value" id="framesSent">0</span>
+      </div>
+      <div>
+        <span class="diag-label">Size:</span>
+        <span class="diag-value" id="frameSize">0 KB</span>
+      </div>
+    </div>
+
+    <div id="frameIndicator">📹 Idle</div>
+
     <script>
+      // ========== Configuration ==========
+      const config = {
+        CAPTURE_INTERVAL: 500, // 500ms = 2 FPS as per Phase 3 specs
+        JPEG_QUALITY: 0.4, // 40% quality for balance
+        CONNECTION_TIMEOUT: 5000,
+        RESIZE_SCALE: 1.0, // Full resolution capture
+      };
+
+      // ========== DOM Elements ==========
       const socket = io();
       const statusDiv = document.getElementById("status");
-
-      socket.on("connect", () => {
-        statusDiv.innerText = "🟢 Connected: Streaming to Edge";
-        statusDiv.style.color = "#00ff00";
-      });
-
-      socket.on("disconnect", () => {
-        statusDiv.innerText = "🔴 Disconnected from Edge";
-        statusDiv.style.color = "red";
-      });
-
       const video = document.getElementById("video");
       const canvas = document.getElementById("canvas");
       const context = canvas.getContext("2d");
+      const frameIndicator = document.getElementById("frameIndicator");
+      const fpsCounter = document.getElementById("fpsCounter");
+      const framesSentDisplay = document.getElementById("framesSent");
+      const frameSizeDisplay = document.getElementById("frameSize");
 
-      // Force the browser to use the back camera
-      navigator.mediaDevices
-        .getUserMedia({ video: { facingMode: "environment" } })
-        .then((stream) => {
-          video.srcObject = stream;
-        })
-        .catch((err) => {
-          statusDiv.innerText = "❌ Camera Access Denied!";
-          statusDiv.style.color = "red";
-        });
+      // ========== State Management ==========
+      let isConnected = false;
+      let isSendingFrame = false;
+      let frameCount = 0;
+      let framesSent = 0;
+      let lastFrameTime = Date.now();
+      let captureIntervalId = null;
+      let fpsIntervalId = null;
 
-      // The AI Heartbeat: Send a frame every 1000ms (1 FPS) with quality optimization
-      let isSending = false;
-      setInterval(() => {
+      // ========== Socket.IO Event Handlers ==========
+      socket.on("connect", () => {
+        isConnected = true;
+        statusDiv.textContent = "🟢 Connected: Streaming to Edge";
+        statusDiv.className = "connected";
+        frameIndicator.textContent = "📹 Streaming";
+        frameIndicator.classList.add("active");
+        startFrameCapture();
+      });
+
+      socket.on("disconnect", () => {
+        isConnected = false;
+        statusDiv.textContent = "🔴 Disconnected from Edge";
+        statusDiv.className = "disconnected";
+        frameIndicator.textContent = "📹 Disconnected";
+        frameIndicator.classList.remove("active");
+        stopFrameCapture();
+      });
+
+      socket.on("error", (error) => {
+        console.error("Socket error:", error);
+        statusDiv.textContent = "⚠️ Connection Error";
+        statusDiv.className = "error";
+      });
+
+      // ========== Camera Access ==========
+      function initCamera() {
+        navigator.mediaDevices
+          .getUserMedia({
+            video: {
+              facingMode: "environment", // Back camera
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          })
+          .then((stream) => {
+            video.srcObject = stream;
+            video.onloadedmetadata = () => {
+              console.log(
+                `Camera started: ${video.videoWidth}x${video.videoHeight}`,
+              );
+            };
+          })
+          .catch((err) => {
+            console.error("Camera access error:", err);
+            statusDiv.textContent = "❌ Camera Access Denied!";
+            statusDiv.className = "error";
+            frameIndicator.textContent = "❌ No Camera";
+          });
+      }
+
+      // ========== Frame Capture & Transmission ==========
+      function captureAndSendFrame() {
+        // Guard: Ensure prerequisites are met
         if (
-          video.readyState === video.HAVE_ENOUGH_DATA &&
-          !isSending &&
-          socket.connected
+          !isConnected ||
+          isSendingFrame ||
+          video.readyState !== video.HAVE_ENOUGH_DATA
         ) {
-          isSending = true;
+          return;
+        }
+
+        isSendingFrame = true;
+        frameIndicator.textContent = "📹 Sending...";
+
+        try {
+          // Capture current video frame to canvas
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
           context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-          // Compress to 30% quality JPEG + further resize to reduce payload
-          let frameData = canvas.toDataURL("image/jpeg", 0.3);
+          // Convert canvas to Base64 JPEG with configurable quality
+          const base64Image = canvas.toDataURL(
+            "image/jpeg",
+            config.JPEG_QUALITY,
+          );
 
-          socket.emit("video_frame", frameData, () => {
-            isSending = false;
+          // Calculate frame size for diagnostics
+          const frameSizeKB = (base64Image.length / 1024).toFixed(2);
+          frameSizeDisplay.textContent = `${frameSizeKB} KB`;
+
+          // Emit frame to server via Socket.IO
+          socket.emit("video_frame", base64Image, (acknowledgment) => {
+            framesSent++;
+            framesSentDisplay.textContent = framesSent;
+
+            // Reset state
+            isSendingFrame = false;
+            frameIndicator.textContent = "📹 Streaming";
+
+            if (acknowledgment) {
+              console.log(`Frame ${framesSent} sent: ${frameSizeKB} KB`);
+            }
           });
+        } catch (error) {
+          console.error("Frame capture/send error:", error);
+          isSendingFrame = false;
         }
-      }, 1000);
+      }
+
+      // ========== Frame Rate Monitor ==========
+      function startFPSMonitor() {
+        fpsIntervalId = setInterval(() => {
+          const now = Date.now();
+          const elapsed = now - lastFrameTime;
+          const fps =
+            frameCount > 0 ? Math.round((frameCount * 1000) / elapsed) : 0;
+
+          fpsCounter.textContent = fps;
+          frameCount = 0;
+          lastFrameTime = now;
+        }, 1000);
+      }
+
+      // ========== Capture Loop Control ==========
+      function startFrameCapture() {
+        console.log(
+          `Starting frame capture at ${1000 / config.CAPTURE_INTERVAL} FPS`,
+        );
+
+        // Start the interval-based frame capture loop (500ms = 2 FPS)
+        captureIntervalId = setInterval(
+          captureAndSendFrame,
+          config.CAPTURE_INTERVAL,
+        );
+        startFPSMonitor();
+      }
+
+      function stopFrameCapture() {
+        if (captureIntervalId) {
+          clearInterval(captureIntervalId);
+          captureIntervalId = null;
+        }
+        if (fpsIntervalId) {
+          clearInterval(fpsIntervalId);
+          fpsIntervalId = null;
+        }
+        console.log("Frame capture stopped");
+      }
+
+      // ========== Frame Counter Increment ==========
+      setInterval(() => {
+        if (isConnected && !isSendingFrame) {
+          frameCount++;
+        }
+      }, config.CAPTURE_INTERVAL);
+
+      // ========== Initialization ==========
+      window.addEventListener("load", () => {
+        console.log("NeuroVision Camera Streamer initialized");
+        console.log(
+          `Configuration: ${config.CAPTURE_INTERVAL}ms capture interval (${1000 / config.CAPTURE_INTERVAL} FPS)`,
+        );
+        initCamera();
+      });
+
+      // ========== Cleanup ==========
+      window.addEventListener("beforeunload", () => {
+        stopFrameCapture();
+        socket.disconnect();
+      });
     </script>
   </body>
 </html>
