@@ -1,0 +1,17 @@
+# Virtual Environments
+venv/
+env/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local Test Artifacts & Notes
+test.jpg
+file structure
+
+# OS generated files
+.DS_Store
+Thumbs.db
