@@ -1,44 +1,56 @@
-import logging
+import time
 from flask import Flask, render_template
-from flask_socketio import SocketIO, emit
-from vision_engine import process_frame_secure
-
-# Clean up the console output so it doesn't spam you with web logs
-log = logging.getLogger('werkzeug')
-log.setLevel(logging.ERROR)
+from flask_socketio import SocketIO
+import vision_engine
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'neurovision_hackathon_secret'
-
-# Enable CORS so the phones aren't blocked from connecting
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+last_frame_time = 0
+last_alert_time = 0
+last_alert_message = "Path clear."
+
 @app.route('/camera')
-def camera_ui():
-    """Serves the frontend for Phone 1 (The Eyes)"""
+def camera():
     return render_template('camera.html')
 
 @app.route('/user')
-def user_ui():
-    """Serves the frontend for Phone 2 (The Audio Interface)"""
+def user():
     return render_template('user.html')
 
 @socketio.on('video_frame')
-def handle_frame(base64_image):
-    """Receives frames from Phone 1, runs AI, sends alerts to Phone 2"""
-    # 1. Pass the incoming image directly to your Phase 1 AI engine
-    command = process_frame_secure(base64_image)
+def handle_frame(data):
+    global last_frame_time, last_alert_time, last_alert_message
+    current_time = time.time()
     
-    # 2. If the AI detects an obstacle, broadcast the warning to Phone 2
-    if command != "Path clear.":
-        emit('navigation_alert', {'message': command}, broadcast=True)
+    # Process 1 frame every 0.4 seconds (Fast but prevents lag)
+    if current_time - last_frame_time < 0.4:
+        return 
+    last_frame_time = current_time
+        
+    ai_response = vision_engine.process_frame_secure(data)
+    
+    # --- SMART SILENCE & CLEAR PATH CONFIRMATION ---
+    if ai_response == "Path clear.":
+        # If the last thing we saw was a barrier, and now it's clear, tell the user!
+        if "barrier" in last_alert_message:
+            if current_time - last_alert_time > 4.5:
+                socketio.emit('navigation_alert', {'message': "Alternative path is clear. Proceed."})
+                last_alert_message = "Path clear."
+                last_alert_time = current_time
+        return # Otherwise, stay in total silence.
+
+    # --- STRICT ANTI-STUTTER COOLDOWN ---
+    # We force the system to wait 4.5 seconds before speaking again so the sentence finishes.
+    if current_time - last_alert_time > 4.5:
+        # Only speak if it's a new threat OR enough time has passed
+        if ai_response != last_alert_message or (current_time - last_alert_time > 6.0):
+            socketio.emit('navigation_alert', {'message': ai_response})
+            last_alert_message = ai_response
+            last_alert_time = current_time
 
 if __name__ == '__main__':
-    print("==================================================")
-    print("🧠 NeuroVision Offline Edge Server is RUNNING.")
-    print("🔗 Connect Phone 1 (Camera) to: http://<YOUR_IPV4_ADDRESS>:5000/camera")
-    print("🔗 Connect Phone 2 (Audio) to:  http://<YOUR_IPV4_ADDRESS>:5000/user")
-    print("==================================================")
-    
-    # host='0.0.0.0' is critical: it allows external devices on the Wi-Fi to connect
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
+    print("==========================================")
+    print("🏆 FINAL PRODUCTION SERVER RUNNING.")
+    print("==========================================")
+    socketio.run(app, host='0.0.0.0', port=5001, debug=False, allow_unsafe_werkzeug=True)
